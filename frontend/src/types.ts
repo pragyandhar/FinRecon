@@ -68,10 +68,16 @@ export interface Metrics {
   total_variance_amount: number;
 }
 
+export interface StepMetrics extends Metrics {
+  step_id: string;
+  rule_applied: string;
+}
+
 export interface Report {
   job_id: string;
   generated_at: string;
   metrics: Metrics;
+  by_step: StepMetrics[];
   results: ReconciliationResult[];
   exception_explanations: ExceptionExplanation[];
   ai_calls_made: number;

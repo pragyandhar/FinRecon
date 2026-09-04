@@ -16,6 +16,15 @@ or job-level metrics) — never the full dataset, which you do not have. \
 If the context doesn't contain enough information to answer, say so \
 plainly instead of guessing. Be concise and factual.
 
+If given job-level context: "combined_metrics" is the sum across every \
+distinct check the reconciliation plan ran (e.g. if the plan compared \
+order_amount vs payment_amount AND separately payment_amount vs \
+settlement_amount, combined totals add both together, so a record count \
+can legitimately exceed the number of rows in any one input file). \
+"metrics_by_check" breaks that same total down per individual check — use \
+it to explain apparent discrepancies in the combined numbers, or to say \
+which specific check is driving a low match rate.
+
 Respond with ONLY a JSON object: {"reply": "<your answer>"}
 """
 
@@ -43,7 +52,13 @@ def _find_context(db: Session, job_id: str, request: ChatRequest) -> tuple[dict,
 
     report = repo.get_report(db, job_id)
     if report is not None:
-        return {"metrics": report.metrics.model_dump(mode="json")}, ["metrics"]
+        return (
+            {
+                "combined_metrics": report.metrics.model_dump(mode="json"),
+                "metrics_by_check": [s.model_dump(mode="json") for s in report.by_step],
+            },
+            ["metrics", "by_step"],
+        )
     return {}, []
 
 

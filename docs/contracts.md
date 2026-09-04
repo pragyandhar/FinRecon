@@ -231,18 +231,40 @@ than getting a fabricated explanation.
   "job_id": "job_abc123",
   "generated_at": "2026-09-04T12:00:00Z",
   "metrics": {
-    "total_records": 100, "matched": 82, "mismatched": 11, "exceptions": 5,
-    "unresolved": 2, "match_rate": 0.82, "mismatch_rate": 0.11,
-    "exception_rate": 0.05, "unresolved_rate": 0.02, "total_variance_amount": 640.0
+    "total_records": 200, "matched": 173, "mismatched": 27, "exceptions": 0,
+    "unresolved": 0, "match_rate": 0.865, "mismatch_rate": 0.135,
+    "exception_rate": 0.0, "unresolved_rate": 0.0, "total_variance_amount": 640.0
   },
+  "by_step": [
+    {
+      "step_id": "s2_compare_order_payment", "rule_applied": "TOLERANCE(1.0)",
+      "total_records": 100, "matched": 91, "mismatched": 9, "exceptions": 0,
+      "unresolved": 0, "match_rate": 0.91, "mismatch_rate": 0.09,
+      "exception_rate": 0.0, "unresolved_rate": 0.0, "total_variance_amount": 210.0
+    },
+    {
+      "step_id": "s4_compare_payment_settlement", "rule_applied": "TOLERANCE(1.0)",
+      "total_records": 100, "matched": 82, "mismatched": 18, "exceptions": 0,
+      "unresolved": 0, "match_rate": 0.82, "mismatch_rate": 0.18,
+      "exception_rate": 0.0, "unresolved_rate": 0.0, "total_variance_amount": 430.0
+    }
+  ],
   "results": ["... ReconciliationResult[] ..."],
   "exception_explanations": ["... ExceptionExplanation[] ..."],
   "ai_calls_made": 3
 }
 ```
 
-`metrics` is computed entirely in code from `results` — never asserted
-by a model.
+`metrics` and `by_step` are computed entirely in code from `results` —
+never asserted by a model. `metrics` is the combined total across every
+check step the plan ran; if a plan runs two distinct comparisons over
+overlapping records (as above — order vs payment, then payment vs
+settlement), `metrics.total_records` is the sum of both, which can
+legitimately exceed the row count of any single input file. This is
+not double-counting the same check twice; it's two different checks.
+`by_step` gives each check its own honest, un-blended match rate, so a
+combined figure never hides which specific relationship is broken —
+the dashboard leads with `by_step` for this reason.
 
 ---
 

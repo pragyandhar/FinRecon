@@ -191,6 +191,38 @@ button {
   color: var(--accent);
 }
 
+.step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.step-row:first-of-type {
+  border-top: none;
+}
+
+.step-rule {
+  font-weight: 600;
+  flex: 1;
+}
+
+.step-count {
+  color: var(--text-muted);
+  margin-right: 16px;
+}
+
+.step-rate {
+  font-weight: 700;
+  color: var(--matched);
+}
+
+.step-rate.low {
+  color: var(--mismatched);
+}
+
 .status-tabs {
   display: flex;
   gap: 8px;

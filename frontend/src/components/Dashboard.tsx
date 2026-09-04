@@ -76,6 +76,25 @@ export function Dashboard({ jobId, onRestart }: Props) {
         </div>
       </div>
 
+      {report.by_step.length > 1 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 12px" }}>
+            The numbers above are a combined total across {report.by_step.length} distinct checks this plan
+            ran. A blended rate can hide which specific relationship is actually broken — here's each one on
+            its own.
+          </p>
+          {report.by_step.map((s) => (
+            <div key={s.step_id} className="step-row">
+              <span className="step-rule">{s.rule_applied}</span>
+              <span className="step-count">{s.total_records} records</span>
+              <span className={`step-rate ${s.match_rate < 0.9 ? "low" : ""}`}>
+                {(s.match_rate * 100).toFixed(0)}% match
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <div className="status-tabs">
           {FILTERS.map((f) => (

@@ -20,10 +20,24 @@ class Metrics(BaseModel):
     total_variance_amount: float = 0.0
 
 
+class StepMetrics(Metrics):
+    """Metrics scoped to one plan step (one check), e.g. "order_amount
+    vs payment_amount". A job's overall Metrics sums across every check
+    a plan ran — if a plan runs two distinct comparisons over the same
+    100 records, that's 200 combined results by design, not a bug. But
+    a single blended match rate over that combined total would hide
+    which specific relationship is actually broken, so this breakdown
+    is what the report and dashboard should lead with."""
+
+    step_id: str
+    rule_applied: str
+
+
 class Report(BaseModel):
     job_id: str
     generated_at: str
     metrics: Metrics
+    by_step: list[StepMetrics] = Field(default_factory=list)
     results: list[ReconciliationResult] = Field(default_factory=list)
     exception_explanations: list[ExceptionExplanation] = Field(default_factory=list)
     ai_calls_made: int = 0
