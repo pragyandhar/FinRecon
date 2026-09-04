@@ -201,3 +201,44 @@ def test_colliding_canonical_field_names_fail_loudly_not_silently():
 
     with pytest.raises(PlanExecutionError, match="ambiguous"):
         run_plan("job_test", plan, [PAYMENTS, SETTLEMENTS], rows_by_dataset, bad_canonical)
+
+
+def test_join_on_low_cardinality_field_refuses_combinatorial_blowup():
+    """Regression test for a real production incident: the planner
+    joined on a non-unique field (here simulated directly) instead of an
+    actual ID. Every row sharing a value pairs with every row on the
+    other side sharing it, so 20x20 inputs joined on a field where every
+    row shares one value produces 400 rows -- a 20x blowup relative to
+    the input size. Left unchecked this cascades into thousands of
+    downstream "exceptions" queued for individual AI investigation:
+    hours of runtime and real API spend on a plan that was never valid.
+    The engine must refuse immediately instead."""
+
+    n = 20
+    payments_ds = _dataset("payments", ["txn", "status"])
+    settlements_ds = _dataset("settlements", ["ref", "status"])
+    canonical = CanonicalMapping(
+        job_id="job_test",
+        mapping={
+            "payments": {"payment_id": "txn", "status": "status"},
+            "settlements": {"payment_id": "ref", "status": "status"},
+        },
+    )
+    payments_rows = [
+        _row("payments", f"payments_{i:03d}", {"txn": f"TX{i}", "status": "SUCCESS"}, i) for i in range(n)
+    ]
+    settlements_rows = [
+        _row("settlements", f"settlements_{i:03d}", {"ref": f"ST{i}", "status": "SUCCESS"}, i) for i in range(n)
+    ]
+
+    bad_join = PlanStep(
+        step_id="s1_join", operation=OperationType.JOIN, left="payments", right="settlements",
+        left_field="status", right_field="status", join_type=JoinType.FULL_OUTER,
+    )
+    plan = ReconciliationPlan(job_id="job_test", plan_version=1, steps=[bad_join])
+
+    with pytest.raises(PlanExecutionError, match="not a unique identifier"):
+        run_plan(
+            "job_test", plan, [payments_ds, settlements_ds],
+            {"payments": payments_rows, "settlements": settlements_rows}, canonical,
+        )

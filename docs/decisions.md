@@ -3,6 +3,64 @@
 Log of choices made while building this pass, and why. Update this file
 whenever a contract or architectural choice changes.
 
+## Incident: an unconstrained JOIN ran for hours and burned the AI budget
+
+A real run against user data ran for 7-8 hours and exhausted the user's
+API budget. Root cause: the plan validator only checked that a JOIN's
+`left_field`/`right_field` existed as canonical field names — it never
+checked they were actually suitable identifiers. If the planner picked
+a low-cardinality field (e.g. `status`, with a handful of repeated
+values like SUCCESS/FAILED/PENDING) as a join key instead of an actual
+ID, `pd.merge(..., how="outer")` doesn't do a 1:1 join — every row on
+the left sharing a value pairs with every row on the right sharing it.
+50 rows with the same status on each side becomes 2,500 joined rows
+from one group alone; chained across a 3-way join this compounds into
+tens of thousands of rows. Every one of those became a COMPARE result,
+a large fraction landed as EXCEPTION, and every exception queued for
+individual AI investigation in batches of 25 — hence hours of runtime
+and real spend on a plan that was never valid reconciliation logic.
+
+This was a genuine gap, not a hypothetical: nothing in the pipeline
+would have caught it before it started spending money. Two independent
+fixes, deliberately not just one:
+
+1. **Root-cause guard** (`app/execution/engine.py::_guard_join_size`):
+   after every JOIN, if the merged row count exceeds
+   `MAX_JOIN_OUTPUT_MULTIPLIER` (default 10) times the larger input, or
+   the absolute `MAX_JOIN_OUTPUT_ROWS` (default 20,000), execution
+   stops immediately with `PlanExecutionError` naming the exact join
+   fields and row counts — before a single downstream result, let alone
+   AI call, is produced. A real identifier join essentially never
+   exceeds a few times the input size; a low-cardinality field will
+   virtually always trip this.
+2. **Independent budget backstop** (`app/investigation/service.py`):
+   `MAX_EXCEPTIONS_TO_INVESTIGATE` (default 200) hard-caps how many
+   exceptions one job will EVER send to the AI investigator, no matter
+   how many exist or why. Records beyond the cap are marked
+   `resolved=False` with a reason explaining the cap, not silently
+   dropped, and cost zero additional calls. This protects the budget
+   even if some other, not-yet-found bug produces an unexpectedly large
+   exception count — it doesn't rely on guard #1 being the only thing
+   that can ever go wrong.
+
+Both are configurable via `.env` (`MAX_JOIN_OUTPUT_ROWS`,
+`MAX_JOIN_OUTPUT_MULTIPLIER`, `MAX_EXCEPTIONS_TO_INVESTIGATE`) and
+covered by regression tests
+(`test_join_on_low_cardinality_field_refuses_combinatorial_blowup` in
+`backend/tests/unit/test_engine.py`;
+`test_exceptions_beyond_the_cap_are_never_sent_to_the_model` in
+`backend/tests/unit/test_investigation.py`) that fail fast with zero
+AI spend if either guard regresses.
+
+A further improvement not yet made: the plan validator could also
+reject a JOIN on a field whose `SchemaField.role` isn't
+`primary_key`/`foreign_key`, catching this before execution even
+starts rather than after a blowup is already computed. The engine-level
+guard above is deliberately the primary fix because it's a backstop
+that holds regardless of whether the model's role-tagging is itself
+correct; the validator check would be an earlier, cheaper rejection
+layered on top, not a replacement for it.
+
 ## Bug found on first real run: canonical name collisions on measure fields
 
 First real end-to-end run (real OpenAI calls, real `orders`/`payments`/

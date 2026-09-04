@@ -49,8 +49,29 @@ def investigate_exceptions(
         return []
 
     all_explanations: list[ExceptionExplanation] = []
-    for i in range(0, len(exceptions), _BATCH_SIZE):
-        batch = exceptions[i : i + _BATCH_SIZE]
+
+    # Hard budget backstop: no matter how many exceptions exist (even if
+    # something upstream produced far more than expected), this job will
+    # never send more than max_exceptions_to_investigate through the AI.
+    # The rest are marked unresolved without spending another call.
+    cap = settings.max_exceptions_to_investigate
+    investigated, skipped = exceptions[:cap], exceptions[cap:]
+    if skipped:
+        all_explanations.extend(
+            ExceptionExplanation(
+                record_id=r.record_id,
+                reason=(
+                    f"Not investigated by AI — this job has {len(exceptions)} exceptions, exceeding the "
+                    f"per-job cap of {cap} that protects API spend. Raw evidence is still on the record."
+                ),
+                resolved=False,
+                confidence=0.0,
+            )
+            for r in skipped
+        )
+
+    for i in range(0, len(investigated), _BATCH_SIZE):
+        batch = investigated[i : i + _BATCH_SIZE]
         user = json.dumps({"exceptions": [_record_payload(r) for r in batch]}, default=str)
 
         usage = {"prompt": 0, "completion": 0}

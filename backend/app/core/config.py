@@ -27,6 +27,19 @@ class Settings(BaseSettings):
     enable_llm_fallback: bool = True
     enable_chat: bool = True
 
+    # Guardrails against a JOIN on a non-unique field (e.g. "status" or
+    # "currency" instead of an actual ID) producing a combinatorial
+    # explosion of rows — which then cascades into thousands of
+    # "exceptions" and burns the AI budget investigating them one by one.
+    max_join_output_rows: int = 20_000
+    max_join_output_multiplier: int = 10  # merged rows vs max(len(left), len(right))
+
+    # Hard ceiling on how many EXCEPTION records one job will ever send
+    # to the AI investigator, no matter how many exist. Protects the
+    # per-job AI spend even if something upstream still produces an
+    # unexpectedly large exception count.
+    max_exceptions_to_investigate: int = 200
+
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     cors_origins: str = "http://localhost:5173"

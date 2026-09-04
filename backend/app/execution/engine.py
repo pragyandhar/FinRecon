@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from app.core.config import settings
 from app.core.errors import PlanExecutionError
 from app.core.util import to_native
 from app.models.dataset import Dataset, DatasetRow
@@ -111,6 +112,28 @@ def _build_evidence(row: pd.Series, sources: set[str], ctx: ExecutionContext) ->
     return evidence
 
 
+def _guard_join_size(step: PlanStep, merged: pd.DataFrame, left_df: pd.DataFrame, right_df: pd.DataFrame) -> None:
+    """A JOIN on a genuine identifier produces at most a few times the
+    larger input's row count. A JOIN on a low-cardinality field (e.g.
+    "status" or "currency" chosen instead of an actual ID) produces a
+    combinatorial blowup instead — every left row sharing a value pairs
+    with every right row sharing it. Left unchecked, that cascades into
+    tens of thousands of downstream results, each an "exception" queued
+    for individual AI investigation: hours of runtime and real API
+    spend for a plan that was never valid reconciliation logic. Refuse
+    immediately rather than let that happen."""
+
+    input_size = max(len(left_df), len(right_df), 1)
+    if len(merged) > settings.max_join_output_rows or len(merged) > settings.max_join_output_multiplier * input_size:
+        raise PlanExecutionError(
+            f"step '{step.step_id}': JOIN on '{step.left_field}'/'{step.right_field}' produced "
+            f"{len(merged)} rows from {len(left_df)}x{len(right_df)} input rows. That means this field "
+            f"is not a unique identifier (a real join key duplicates rarely, if ever) — likely a "
+            f"low-cardinality field like status/currency got used as the join key instead of an ID. "
+            f"Refusing to execute what would be a combinatorial blowup."
+        )
+
+
 def _do_join(ctx: ExecutionContext, step: PlanStep) -> None:
     left_df = ctx.relations[step.left]
     right_df = ctx.relations[step.right]
@@ -126,6 +149,7 @@ def _do_join(ctx: ExecutionContext, step: PlanStep) -> None:
         )
         key_col = step.left_field
 
+    _guard_join_size(step, merged, left_df, right_df)
     ctx.relations[step.step_id] = merged
     ctx.relation_sources[step.step_id] = ctx.relation_sources[step.left] | ctx.relation_sources[step.right]
     ctx.join_sides[step.step_id] = {"left": step.left, "right": step.right}
