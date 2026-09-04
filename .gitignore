@@ -1,0 +1,39 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Data / storage (raw uploads, sqlite db)
+backend/storage/raw/
+backend/storage/*.db
+backend/storage/*.sqlite3
+*.db
+*.sqlite3
+
+# Sandbox/pytest temp artifacts occasionally land here instead of system /tmp
+/tmp/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+*.tsbuildinfo
