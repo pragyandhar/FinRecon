@@ -3,6 +3,9 @@ tests that matter most: the engine is the piece that must never depend
 on any specific financial column name, must not care about row order,
 and must never silently drop a record."""
 
+import pytest
+
+from app.core.errors import PlanExecutionError
 from app.execution.engine import run_plan
 from app.models.dataset import Dataset, DatasetColumn, DatasetRow
 from app.models.enums import ComparisonType, JoinType, OperationType
@@ -172,3 +175,29 @@ def test_evidence_preserved_for_every_result():
     dataset_ids = {e.dataset_id for e in matched.evidence}
     assert dataset_ids == {"payments", "settlements"}
     assert all(e.values for e in matched.evidence)
+
+
+def test_colliding_canonical_field_names_fail_loudly_not_silently():
+    """Regression test for a real bug: if canonical mapping ever gives two
+    joined datasets the SAME non-key canonical name (e.g. both "amount"
+    instead of "payment_amount"/"settlement_amount"), pandas' merge
+    disambiguates with suffixes and the plan's field reference becomes
+    ambiguous. The engine must raise a clear error here, never silently
+    pick one side's value and call it a comparison."""
+
+    bad_canonical = CanonicalMapping(
+        job_id="job_test",
+        mapping={
+            "payments": {"payment_id": "txn", "amount": "amt"},
+            "settlements": {"payment_id": "ref", "amount": "net"},
+        },
+    )
+    compare = PlanStep(
+        step_id="s2_compare", operation=OperationType.COMPARE, input="s1_join",
+        comparison=ComparisonType.TOLERANCE, field_a="amount", field_b="amount", tolerance=10,
+    )
+    plan = _base_plan([compare])
+    rows_by_dataset = {"payments": _payments_rows(), "settlements": _settlements_rows()}
+
+    with pytest.raises(PlanExecutionError, match="ambiguous"):
+        run_plan("job_test", plan, [PAYMENTS, SETTLEMENTS], rows_by_dataset, bad_canonical)

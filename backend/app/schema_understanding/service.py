@@ -20,12 +20,23 @@ Rules:
 - semantic_type must be one of: identifier, currency_amount, date, status, \
 customer_reference, text, other.
 - role must be one of: primary_key, foreign_key, measure, attribute.
-- Use the SAME canonical_name across datasets when two columns represent \
-the same real-world concept (e.g. a payment reference that appears in both \
-a payments file and a settlements file must get the same canonical_name in \
-both, such as "payment_id"), so the fields can later be joined. Reuse \
-common finance concepts where they fit: payment_id, order_id, \
-settlement_id, customer_id, amount, currency, status, transaction_date.
+- For IDENTIFIER/KEY fields only (role=primary_key or foreign_key — things \
+like a payment reference, order reference, or customer reference): use the \
+SAME canonical_name across datasets when two columns represent the same \
+real-world entity (e.g. a payment reference that appears in both a payments \
+file and a settlements file must both get canonical_name "payment_id"), so \
+the fields can later be joined. Reuse common identifiers where they fit: \
+payment_id, order_id, settlement_id, customer_id.
+- For MEASURE fields (amounts) and for status/date fields: do the OPPOSITE — \
+give each dataset its OWN distinct, dataset-qualified canonical_name, even \
+when the concept is similar across datasets. Reconciliation works by \
+comparing an order's amount against a payment's amount, or a payment's \
+status against a settlement's status; if both get the same canonical_name \
+("amount", "status", "date") they become indistinguishable and cannot be \
+compared. Prefix with the dataset's role: order_amount, payment_amount, \
+settlement_amount; order_status, payment_status, settlement_status; \
+order_date, payment_date, settlement_date — derived from what each dataset \
+represents, not copy-pasted from this example.
 - confidence is your calibrated 0-1 confidence in the semantic_type/role \
 guess for that field.
 - Do not invent columns that are not in the input.

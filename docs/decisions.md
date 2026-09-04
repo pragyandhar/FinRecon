@@ -3,6 +3,43 @@
 Log of choices made while building this pass, and why. Update this file
 whenever a contract or architectural choice changes.
 
+## Bug found on first real run: canonical name collisions on measure fields
+
+First real end-to-end run (real OpenAI calls, real `orders`/`payments`/
+`settlements` data) failed at execution with `PLAN_EXECUTION_FAILED:
+cannot resolve field 'amount' ... (ambiguous: ['amount_orders',
+'amount_payments'])`.
+
+Root cause: the original schema-understanding prompt
+(`backend/app/schema_understanding/service.py`) told the model to reuse
+shared canonical names across datasets for "common finance concepts",
+and listed `amount` as an example alongside `payment_id`/`order_id`.
+That's correct for identifier fields (you *want* `payment_id` to mean
+the same thing in both `payments` and `settlements` so they can be
+joined) but wrong for measure fields — reconciliation's whole point is
+comparing `order_amount` against `payment_amount`, so if both collapse
+to the same canonical name `amount`, they become indistinguishable:
+after the JOIN, pandas disambiguates the collision with suffixes
+(`amount__orders`, `amount__payments`), and the plan's `field_a:
+"amount"` reference is ambiguous between them.
+
+This was **not silently wrong** — the engine's `_resolve_column`
+(`backend/app/execution/engine.py`) refused to guess and raised a clear
+error naming the exact ambiguity, exactly per the "never silently
+produce wrong results" principle. But it shouldn't have been reachable
+in the first place.
+
+Fix: the schema-understanding prompt now explicitly splits guidance —
+identifier/key fields (`payment_id`, `order_id`, `customer_id`, ...)
+should share canonical names across datasets to enable joins; measure,
+status, and date fields should NOT — they get dataset-qualified
+canonical names (`order_amount`/`payment_amount`/`settlement_amount`,
+`order_status`/`payment_status`/..., etc.) so they stay comparable
+rather than colliding. A regression test
+(`test_colliding_canonical_field_names_fail_loudly_not_silently` in
+`backend/tests/unit/test_engine.py`) locks in the safe-failure behavior
+even if canonicalization collides again for some other reason.
+
 ## Scope: core loop, not the full spec
 
 `context/architecture.md` and the four agent briefs describe a
