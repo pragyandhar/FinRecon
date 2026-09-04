@@ -61,6 +61,42 @@ that holds regardless of whether the model's role-tagging is itself
 correct; the validator check would be an earlier, cheaper rejection
 layered on top, not a replacement for it.
 
+### Follow-up: the output-size guard above was not actually strict enough
+
+The user then supplied the real data from the incident:
+`merchant_ledger_100.csv`, `gateway_transactions_100.csv`,
+`bank_statements_100.csv` (now in `data/`). Checking it directly (pure
+pandas, zero AI cost) found the guard above has a real gap: these files
+share a `merchant_id` field that IS a legitimate, correctly-shared
+identifier by role (15 merchants, correctly the same real-world entity
+across the ledger and the gateway) — but only 15 distinct values across
+100 rows on each side. Joining individual transactions on it produces
+776 rows from 100x100 inputs: a 7.76x blowup. `MAX_JOIN_OUTPUT_MULTIPLIER`
+(10x) does not catch that. Meanwhile the actual correct join key for
+these files, `transaction_reference`/`gateway_reference`, is 100%
+unique on both sides and produces a sane 118 rows (1.18x) — confirming
+the size-based check alone is both too loose here and not the right
+signal to check in the first place.
+
+Added a second, earlier, stricter guard directly on the join key's
+cardinality, checked *before* the merge even runs
+(`app/execution/engine.py::_guard_join_key_uniqueness`,
+`MIN_JOIN_KEY_UNIQUENESS`, default 0.5): if either side's join field is
+less than 50% unique, refuse immediately, regardless of how large the
+resulting output would actually be. This is the more principled check
+— a field can be a real, correctly-shared identifier by role and still
+be the wrong field to join *individual transactions* on for row-level
+reconciliation, and that's a property of the key's cardinality, not of
+the merge's output size. The output-size guard stays as a backstop for
+whatever this one doesn't anticipate.
+
+Regression tests use the actual incident data end-to-end, not
+synthetic stand-ins: `test_real_incident_data_merchant_id_join_now_refused`
+proves the bad join is now rejected, and
+`test_real_incident_data_correct_join_key_is_not_falsely_rejected`
+proves the correct join on the same files still runs cleanly — both in
+`backend/tests/unit/test_engine.py`.
+
 ## Bug found on first real run: canonical name collisions on measure fields
 
 First real end-to-end run (real OpenAI calls, real `orders`/`payments`/

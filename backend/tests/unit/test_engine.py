@@ -3,6 +3,8 @@ tests that matter most: the engine is the piece that must never depend
 on any specific financial column name, must not care about row order,
 and must never silently drop a record."""
 
+from pathlib import Path
+
 import pytest
 
 from app.core.errors import PlanExecutionError
@@ -237,8 +239,103 @@ def test_join_on_low_cardinality_field_refuses_combinatorial_blowup():
     )
     plan = ReconciliationPlan(job_id="job_test", plan_version=1, steps=[bad_join])
 
-    with pytest.raises(PlanExecutionError, match="not a unique identifier"):
+    with pytest.raises(PlanExecutionError, match="per-record identifier"):
         run_plan(
             "job_test", plan, [payments_ds, settlements_ds],
             {"payments": payments_rows, "settlements": settlements_rows}, canonical,
         )
+
+
+def test_real_incident_data_merchant_id_join_now_refused():
+    """Reproduces the exact production incident with the actual data
+    that caused it: merchant_ledger_100.csv and
+    gateway_transactions_100.csv both share a "merchant_id" field that
+    IS a legitimate, correctly-shared identifier (role-wise) -- but
+    only 15 distinct merchants across 100 rows each, so joining
+    individual transactions on it produces 776 rows from 100x100
+    inputs (7.76x), which the size-based guard alone (10x threshold)
+    would NOT have caught. The uniqueness-based guard must catch it
+    directly, on the join key itself, regardless of output size."""
+
+    import pandas as pd
+
+    data_dir = Path(__file__).resolve().parents[3] / "data"
+    ledger_df = pd.read_csv(data_dir / "merchant_ledger_100.csv")
+    gateway_df = pd.read_csv(data_dir / "gateway_transactions_100.csv")
+
+    ledger_ds = _dataset("merchant_ledger", list(ledger_df.columns))
+    gateway_ds = _dataset("gateway_transactions", list(gateway_df.columns))
+    canonical = CanonicalMapping(
+        job_id="job_test",
+        mapping={
+            "merchant_ledger": {"merchant_id": "merchant_id"},
+            "gateway_transactions": {"merchant_id": "merchant_id"},
+        },
+    )
+    ledger_rows = [
+        _row("merchant_ledger", f"ledger_{i:03d}", {"merchant_id": v}, i)
+        for i, v in enumerate(ledger_df["merchant_id"])
+    ]
+    gateway_rows = [
+        _row("gateway_transactions", f"gateway_{i:03d}", {"merchant_id": v}, i)
+        for i, v in enumerate(gateway_df["merchant_id"])
+    ]
+
+    bad_join = PlanStep(
+        step_id="s1_join", operation=OperationType.JOIN, left="merchant_ledger", right="gateway_transactions",
+        left_field="merchant_id", right_field="merchant_id", join_type=JoinType.FULL_OUTER,
+    )
+    plan = ReconciliationPlan(job_id="job_test", plan_version=1, steps=[bad_join])
+
+    with pytest.raises(PlanExecutionError, match="unique"):
+        run_plan(
+            "job_test", plan, [ledger_ds, gateway_ds],
+            {"merchant_ledger": ledger_rows, "gateway_transactions": gateway_rows}, canonical,
+        )
+
+
+def test_real_incident_data_correct_join_key_is_not_falsely_rejected():
+    """The other half of the proof: the guard must not be so strict it
+    rejects a genuinely correct join on this same real data. ledger's
+    transaction_reference and gateway's gateway_reference are ~100%
+    unique per-transaction references -- the guard must let this
+    through and the engine must execute it normally."""
+
+    import pandas as pd
+
+    data_dir = Path(__file__).resolve().parents[3] / "data"
+    ledger_df = pd.read_csv(data_dir / "merchant_ledger_100.csv")
+    gateway_df = pd.read_csv(data_dir / "gateway_transactions_100.csv")
+
+    ledger_ds = _dataset("merchant_ledger", list(ledger_df.columns))
+    gateway_ds = _dataset("gateway_transactions", list(gateway_df.columns))
+    canonical = CanonicalMapping(
+        job_id="job_test",
+        mapping={
+            "merchant_ledger": {"txn_ref": "transaction_reference"},
+            "gateway_transactions": {"txn_ref": "gateway_reference"},
+        },
+    )
+    ledger_rows = [
+        _row("merchant_ledger", f"ledger_{i:03d}", {"transaction_reference": v}, i)
+        for i, v in enumerate(ledger_df["transaction_reference"])
+    ]
+    gateway_rows = [
+        _row("gateway_transactions", f"gateway_{i:03d}", {"gateway_reference": v}, i)
+        for i, v in enumerate(gateway_df["gateway_reference"])
+    ]
+
+    good_join = PlanStep(
+        step_id="s1_join", operation=OperationType.JOIN, left="merchant_ledger", right="gateway_transactions",
+        left_field="txn_ref", right_field="txn_ref", join_type=JoinType.FULL_OUTER,
+    )
+    plan = ReconciliationPlan(job_id="job_test", plan_version=1, steps=[good_join])
+
+    output = run_plan(
+        "job_test", plan, [ledger_ds, gateway_ds],
+        {"merchant_ledger": ledger_rows, "gateway_transactions": gateway_rows}, canonical,
+    )
+    # No results yet (no COMPARE step), but critically: no exception raised,
+    # and the join itself must have run (checked via the engine's internal
+    # relation, proven indirectly by reaching this line without error).
+    assert output.results == []

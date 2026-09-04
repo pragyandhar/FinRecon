@@ -27,10 +27,15 @@ class Settings(BaseSettings):
     enable_llm_fallback: bool = True
     enable_chat: bool = True
 
-    # Guardrails against a JOIN on a non-unique field (e.g. "status" or
-    # "currency" instead of an actual ID) producing a combinatorial
-    # explosion of rows — which then cascades into thousands of
-    # "exceptions" and burns the AI budget investigating them one by one.
+    # Guardrails against a JOIN on a non-unique field (e.g. "status",
+    # "currency", or "merchant_id" instead of a per-transaction ID)
+    # producing a combinatorial explosion of rows — which then cascades
+    # into thousands of "exceptions" and burns the AI budget investigating
+    # them one by one. min_join_key_uniqueness is checked BEFORE merging,
+    # against the join key's own duplication rate — a moderately-repeated
+    # key (e.g. 15% unique) can blow up output rows by "only" ~8x, which
+    # a size-based check alone can miss; the other two remain a backstop.
+    min_join_key_uniqueness: float = 0.5  # fraction of distinct values required on each side
     max_join_output_rows: int = 20_000
     max_join_output_multiplier: int = 10  # merged rows vs max(len(left), len(right))
 

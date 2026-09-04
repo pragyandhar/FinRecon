@@ -134,11 +134,42 @@ def _guard_join_size(step: PlanStep, merged: pd.DataFrame, left_df: pd.DataFrame
         )
 
 
+def _uniqueness_ratio(df: pd.DataFrame, column: str) -> float:
+    if len(df) == 0:
+        return 1.0
+    return df[column].nunique(dropna=True) / len(df)
+
+
+def _guard_join_key_uniqueness(step: PlanStep, left_df: pd.DataFrame, right_df: pd.DataFrame) -> None:
+    """Checked BEFORE merging, not after: a genuine per-transaction join
+    key (an ID) is close to 100% unique on both sides. A field like
+    "merchant_id" can be a legitimate, correctly-shared identifier by
+    role and still be a terrible join key for row-level reconciliation —
+    15% unique (each value repeated ~7x) produces "only" a ~8x blowup,
+    which can slide under a pure output-size check while still being
+    obviously the wrong field to join transactions on. Reject on
+    cardinality directly, before spending time computing the merge."""
+
+    left_ratio = _uniqueness_ratio(left_df, step.left_field)
+    right_ratio = _uniqueness_ratio(right_df, step.right_field)
+    threshold = settings.min_join_key_uniqueness
+    if left_ratio < threshold or right_ratio < threshold:
+        raise PlanExecutionError(
+            f"step '{step.step_id}': JOIN key '{step.left_field}' is only {left_ratio:.0%} unique in "
+            f"'{step.left}' and '{step.right_field}' is {right_ratio:.0%} unique in '{step.right}' "
+            f"(need >= {threshold:.0%} on both sides). This field repeats too often to be a per-record "
+            f"identifier — it may be a legitimate shared attribute (e.g. a merchant or account ID), but "
+            f"it is the wrong field to join individual transactions on for reconciliation."
+        )
+
+
 def _do_join(ctx: ExecutionContext, step: PlanStep) -> None:
     left_df = ctx.relations[step.left]
     right_df = ctx.relations[step.right]
     how = _JOIN_HOW[step.join_type]
     suffixes = (f"__{step.left}", f"__{step.right}")
+
+    _guard_join_key_uniqueness(step, left_df, right_df)
 
     if step.left_field == step.right_field:
         merged = pd.merge(left_df, right_df, how=how, on=step.left_field, suffixes=suffixes)
