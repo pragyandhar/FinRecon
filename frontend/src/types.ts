@@ -71,6 +71,7 @@ export interface Metrics {
 export interface StepMetrics extends Metrics {
   step_id: string;
   rule_applied: string;
+  relationship: string;
 }
 
 export interface Report {

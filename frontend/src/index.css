@@ -191,36 +191,49 @@ button {
   color: var(--accent);
 }
 
-.step-row {
+.relationship-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.relationship-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.relationship-name {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.relationship-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
   font-size: 13px;
 }
 
-.step-row:first-of-type {
-  border-top: none;
-}
-
-.step-rule {
-  font-weight: 600;
-  flex: 1;
-}
-
-.step-count {
+.relationship-count {
   color: var(--text-muted);
-  margin-right: 16px;
 }
 
-.step-rate {
+.relationship-rate {
   font-weight: 700;
   color: var(--matched);
 }
 
-.step-rate.low {
+.relationship-rate.low {
   color: var(--mismatched);
+}
+
+.relationship-breakdown {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .status-tabs {

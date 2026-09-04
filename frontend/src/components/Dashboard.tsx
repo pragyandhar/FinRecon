@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getReport, FinReconApiError } from "../api";
-import type { Report, ReconciliationResult, RecordStatus } from "../types";
+import type { Report, ReconciliationResult, RecordStatus, StepMetrics } from "../types";
 import { ResultsTable } from "./ResultsTable";
 import { RecordDetail } from "./RecordDetail";
 import { ChatPanel } from "./ChatPanel";
@@ -13,6 +13,13 @@ interface Props {
 type Filter = "ALL" | RecordStatus;
 
 const FILTERS: Filter[] = ["ALL", "MATCHED", "MISMATCHED", "EXCEPTION", "UNRESOLVED"];
+
+function breakdownText(s: StepMetrics): string {
+  const parts = [`${s.matched} matched`, `${s.mismatched} mismatched`];
+  if (s.exceptions > 0) parts.push(`${s.exceptions} exceptions`);
+  if (s.unresolved > 0) parts.push(`${s.unresolved} unresolved`);
+  return parts.join(" · ");
+}
 
 export function Dashboard({ jobId, onRestart }: Props) {
   const [report, setReport] = useState<Report | null>(null);
@@ -78,21 +85,25 @@ export function Dashboard({ jobId, onRestart }: Props) {
       </div>
 
       {report.by_step.length > 1 && (
-        <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ marginBottom: 20 }}>
           <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "0 0 12px" }}>
-            The numbers above are a combined total across {report.by_step.length} distinct checks this plan
-            ran. A blended rate can hide which specific relationship is actually broken — here's each one on
-            its own.
+            Overall match rate combines all reconciliation checks. View each relationship below for the
+            detailed breakdown.
           </p>
-          {report.by_step.map((s) => (
-            <div key={s.step_id} className="step-row">
-              <span className="step-rule">{s.rule_applied}</span>
-              <span className="step-count">{s.total_records} records</span>
-              <span className={`step-rate ${s.match_rate < 0.9 ? "low" : ""}`}>
-                {(s.match_rate * 100).toFixed(0)}% match
-              </span>
-            </div>
-          ))}
+          <div className="relationship-grid">
+            {report.by_step.map((s) => (
+              <div key={s.step_id} className="relationship-card">
+                <div className="relationship-name">{s.relationship}</div>
+                <div className="relationship-row">
+                  <span className="relationship-count">{s.total_records} records</span>
+                  <span className={`relationship-rate ${s.match_rate < 0.9 ? "low" : ""}`}>
+                    {(s.match_rate * 100).toFixed(0)}% match
+                  </span>
+                </div>
+                <div className="relationship-breakdown">{breakdownText(s)}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

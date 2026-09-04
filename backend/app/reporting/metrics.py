@@ -1,5 +1,7 @@
+from app.models.plan import ReconciliationPlan
 from app.models.report import Metrics, StepMetrics
 from app.models.result import ReconciliationResult
+from app.reporting.labels import describe_step_relationship
 
 
 def _safe_rate(count: int, total: int) -> float:
@@ -65,11 +67,20 @@ def compute_metrics(results: list[ReconciliationResult]) -> Metrics:
     )
 
 
-def compute_step_metrics(results: list[ReconciliationResult]) -> list[StepMetrics]:
+def compute_step_metrics(
+    results: list[ReconciliationResult],
+    plan: ReconciliationPlan | None = None,
+    dataset_ids: set[str] | None = None,
+) -> list[StepMetrics]:
     """One Metrics breakdown per plan step (one per distinct check),
     in the order steps first appear in `results`, so "order_amount vs
     payment_amount" and "payment_amount vs settlement_amount" (say)
-    each get their own honest match rate instead of being blended."""
+    each get their own honest match rate instead of being blended.
+
+    When `plan` and `dataset_ids` are given, each step also gets a
+    human-readable `relationship` label ("Orders ↔ Payments") derived
+    from the plan itself — see app/reporting/labels.py. Without them,
+    `relationship` falls back to the raw step_id."""
 
     by_step: dict[str, list[ReconciliationResult]] = {}
     for r in results:
@@ -78,10 +89,16 @@ def compute_step_metrics(results: list[ReconciliationResult]) -> list[StepMetric
     breakdown = []
     for step_id, step_results in by_step.items():
         c = _counts(step_results)
+        relationship = (
+            describe_step_relationship(plan, step_id, dataset_ids)
+            if plan is not None and dataset_ids is not None
+            else step_id
+        )
         breakdown.append(
             StepMetrics(
                 step_id=step_id,
                 rule_applied=step_results[0].rule_applied,
+                relationship=relationship,
                 total_records=c["total"],
                 matched=c["matched"],
                 mismatched=c["mismatched"],

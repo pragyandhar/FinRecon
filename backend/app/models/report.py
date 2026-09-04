@@ -31,6 +31,7 @@ class StepMetrics(Metrics):
 
     step_id: str
     rule_applied: str
+    relationship: str
 
 
 class Report(BaseModel):
