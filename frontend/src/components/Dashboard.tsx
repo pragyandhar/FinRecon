@@ -19,6 +19,7 @@ export function Dashboard({ jobId, onRestart }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("ALL");
   const [selected, setSelected] = useState<ReconciliationResult | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     getReport(jobId)
@@ -107,18 +108,28 @@ export function Dashboard({ jobId, onRestart }: Props) {
             </button>
           ))}
         </div>
-        <a className="ghost-button" href={`/reconciliation/jobs/${jobId}/report?format=csv`} download>
-          Export CSV
-        </a>
+        <div style={{ display: "flex", gap: 8 }}>
+          <a className="ghost-button" href={`/reconciliation/jobs/${jobId}/report?format=csv`} download>
+            Export CSV
+          </a>
+          <button className={`ghost-button ${chatOpen ? "selected" : ""}`} onClick={() => setChatOpen((v) => !v)}>
+            Chat
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <ResultsTable results={filtered} onSelect={setSelected} />
       </div>
 
-      <div className="card" style={{ marginTop: 20 }}>
-        <ChatPanel jobId={jobId} />
-      </div>
+      {chatOpen && (
+        <div className="chat-popup">
+          <button className="chat-popup-close" onClick={() => setChatOpen(false)} aria-label="Close chat">
+            ×
+          </button>
+          <ChatPanel jobId={jobId} />
+        </div>
+      )}
 
       <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 16 }}>
         {metrics.total_records} records processed · {metrics.total_variance_amount} total variance ·{" "}

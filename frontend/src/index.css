@@ -299,6 +299,46 @@ button {
   color: var(--unresolved);
 }
 
+.ghost-button.selected {
+  background: var(--text);
+  color: white;
+  border-color: var(--text);
+}
+
+.chat-popup {
+  position: fixed;
+  top: 88px;
+  right: 24px;
+  width: 380px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  padding: 16px;
+  z-index: 20;
+}
+
+.chat-popup .chat-panel {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+.chat-popup-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 4px;
+}
+
 .detail-panel {
   position: fixed;
   top: 0;
